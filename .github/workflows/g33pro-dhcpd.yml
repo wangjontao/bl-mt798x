@@ -1,0 +1,63 @@
+name: GIELINK G33Pro SP2 DHCPD U-Boot
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [gielink-g33pro-dhcpd]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu build-essential flex bison libssl-dev device-tree-compiler qemu-user-static nodejs npm python3
+
+      - name: Fetch DHCPD U-Boot source
+        run: git clone --depth=1 https://github.com/Yuzhii0718/bl-mt798x-dhcpd.git source
+
+      - name: Add G33Pro board definition
+        run: |
+          cp boards/gielink_g33pro/mt7981-gielink-g33pro.dts source/uboot-mtk-20250711/arch/arm/dts/
+          cp boards/gielink_g33pro/mt7981_gielink_g33pro_defconfig source/uboot-mtk-20250711/configs/
+          cp boards/gielink_g33pro/mt7981_gielink_g33pro_atf_defconfig source/atf-20240117-bacca82a8/configs/mt7981_gielink_g33pro_defconfig
+          test -L source/atf-20260123/configs
+          grep -q 'CONFIG_MTDPARTS_DEFAULT="nmbm0:1024k(bl2),512k(u-boot-env),2048k(factory),2048k(fip),114M(ubi)"' source/uboot-mtk-20250711/configs/mt7981_gielink_g33pro_defconfig
+          grep -q 'reg = <0x40000000 0x20000000>;' source/uboot-mtk-20250711/arch/arm/dts/mt7981-gielink-g33pro.dts
+
+      - name: Build SP2 BL2 and fixed-parts DHCPD FIP
+        working-directory: source
+        run: |
+          chmod +x build.sh
+          SOC=mt7981 BOARD=gielink_g33pro VERSION=SP2 VARIANT=default FIXED_MTDPARTS=1 MULTI_LAYOUT=0 FSTHEME=bootstrap UBIMNG=1 COPY_BL2=1 ./build.sh 2>&1 | tee ../build-g33pro.log
+
+      - name: Validate and collect
+        run: |
+          set -eu
+          mkdir -p release
+          find source/output -maxdepth 1 -type f -name '*gielink_g33pro*' -exec cp -v {} release/ \;
+          test "$(find release -type f -name 'bl2-*' | wc -l)" -ge 1
+          test "$(find release -type f -name 'fip-*fixed-parts*' | wc -l)" -ge 1
+          cp boards/gielink_g33pro/* release/
+          (cd release && sha256sum * > SHA256SUMS)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GIELINK-G33PRO-SP2-DHCPD-UBOOT-${{ github.run_number }}
+          path: |
+            release/
+            build-g33pro.log
+          retention-days: 30
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "gielink-g33pro-sp2-dhcpd-${{ github.run_number }}" release/* --target "$GITHUB_SHA" --title "GIELINK G33Pro SP2 DHCPD U-Boot ${{ github.run_number }}" --notes 'MT7981 GIELINK G33Pro: 512MB DDR4, SPI-NAND/NMBM, fixed partitions bl2 1MiB + env 512KiB + factory 2MiB + fip 2MiB + ubi 114MiB. Mesh key GPIO0, reset GPIO1, RGB LEDs GPIO10/11/12. Includes DHCP failsafe and advanced WebUI.'
