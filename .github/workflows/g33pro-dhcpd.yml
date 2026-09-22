@@ -35,33 +35,32 @@ jobs:
           path = Path("source/uboot-mtk-20250711/board/mediatek/common/mtd_helper.c")
           text = path.read_text()
 
-          old = '''			if (!ret && ii.type == IMAGE_UBI2 &&
-			    !IS_ENABLED(CONFIG_MTK_DUAL_BOOT))
-				return mtd_update_generic(mtd, data, size, true);
-'''
-          new = '''			if (!ret && ii.type == IMAGE_UBI2 &&
-			    !IS_ENABLED(CONFIG_MTK_DUAL_BOOT)) {
-				/*
-				 * G33Pro uses a large fixed UBI partition.  A shorter
-				 * factory image must not leave old EC headers at the tail,
-				 * otherwise Linux rejects mixed image_seq values on attach.
-				 */
-				ubi_detach();
-				ret = mtd_erase_skip_bad(mtd, 0, mtd->size, mtd->size,
-							 NULL, NULL, NULL, false);
-				if (ret)
-					return ret;
+          old = (
+              "\t\t\tif (!ret && ii.type == IMAGE_UBI2 &&\n"
+              "\t\t\t    !IS_ENABLED(CONFIG_MTK_DUAL_BOOT))\n"
+              "\t\t\t\treturn mtd_update_generic(mtd, data, size, true);\n"
+          )
+          new = (
+              "\t\t\tif (!ret && ii.type == IMAGE_UBI2 &&\n"
+              "\t\t\t    !IS_ENABLED(CONFIG_MTK_DUAL_BOOT)) {\n"
+              "\t\t\t\t/* G33Pro: erase the complete UBI partition first. */\n"
+              "\t\t\t\tubi_detach();\n"
+              "\t\t\t\tret = mtd_erase_skip_bad(mtd, 0, mtd->size, mtd->size,\n"
+              "\t\t\t\t\t\t\t NULL, NULL, NULL, false);\n"
+              "\t\t\t\tif (ret)\n"
+              "\t\t\t\t\treturn ret;\n"
+              "\n"
+              "\t\t\t\treturn mtd_write_skip_bad(mtd, 0, size, mtd->size,\n"
+              "\t\t\t\t\t\t\t  NULL, data, true);\n"
+              "\t\t\t}\n"
+          )
 
-				return mtd_write_skip_bad(mtd, 0, size, mtd->size,
-							  NULL, data, true);
-			}
-'''
           if old not in text:
               raise SystemExit("ERROR: expected IMAGE_UBI2 write path not found")
           path.write_text(text.replace(old, new, 1))
           PY
-          grep -A18 'ii.type == IMAGE_UBI2' source/uboot-mtk-20250711/board/mediatek/common/mtd_helper.c | grep -q 'mtd->size'
-          grep -A18 'ii.type == IMAGE_UBI2' source/uboot-mtk-20250711/board/mediatek/common/mtd_helper.c | grep -q 'mtd_write_skip_bad'
+          grep -A16 'ii.type == IMAGE_UBI2' source/uboot-mtk-20250711/board/mediatek/common/mtd_helper.c | grep -q 'mtd_erase_skip_bad'
+          grep -A16 'ii.type == IMAGE_UBI2' source/uboot-mtk-20250711/board/mediatek/common/mtd_helper.c | grep -q 'mtd_write_skip_bad'
 
       - name: Add G33Pro board definition
         run: |
