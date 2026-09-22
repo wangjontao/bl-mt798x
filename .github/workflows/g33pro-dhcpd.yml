@@ -31,6 +31,7 @@ jobs:
           test -L source/atf-20260123/configs
           grep -q 'CONFIG_MTDPARTS_DEFAULT="nmbm0:1024k(bl2),512k(u-boot-env),2048k(factory),2048k(fip),114M(ubi)"' source/uboot-mtk-20250711/configs/mt7981_gielink_g33pro_defconfig
           grep -q 'reg = <0x40000000 0x20000000>;' source/uboot-mtk-20250711/arch/arm/dts/mt7981-gielink-g33pro.dts
+          grep -q 'mediatek,switch = "mt7531";' source/uboot-mtk-20250711/arch/arm/dts/mt7981-gielink-g33pro.dts
 
       - name: Build SP2 BL2 and fixed-parts DHCPD FIP
         working-directory: source
@@ -60,4 +61,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "gielink-g33pro-sp2-dhcpd-${{ github.run_number }}" release/* --target "$GITHUB_SHA" --title "GIELINK G33Pro SP2 DHCPD U-Boot ${{ github.run_number }}" --notes 'MT7981 GIELINK G33Pro: 512MB DDR4, SPI-NAND/NMBM, fixed partitions bl2 1MiB + env 512KiB + factory 2MiB + fip 2MiB + ubi 114MiB. Mesh key GPIO0, reset GPIO1, RGB LEDs GPIO10/11/12. Includes DHCP failsafe and advanced WebUI.'
+          gh release create "gielink-g33pro-sp2-dhcpd-${{ github.run_number }}" release/* --target "$GITHUB_SHA" --title "GIELINK G33Pro SP2 DHCPD U-Boot ${{ github.run_number }}" --notes 'MT7981 GIELINK G33Pro: 512MB DDR4, SPI-NAND/NMBM, fixed partitions bl2 1MiB + env 512KiB + factory 2MiB + fip 2MiB + ubi 114MiB. Mesh key GPIO0, reset GPIO1, RGB LEDs GPIO10/11/12. Q30Pro-style MT7531 switch selection; Linux WAN/LAN roles are defined by the system DTS. Includes DHCP failsafe and advanced WebUI.'
