@@ -21,7 +21,47 @@ jobs:
           sudo apt-get install -y gcc-aarch64-linux-gnu build-essential flex bison libssl-dev device-tree-compiler qemu-user-static nodejs npm python3
 
       - name: Fetch DHCPD U-Boot source
-        run: git clone --depth=1 https://github.com/Yuzhii0718/bl-mt798x-dhcpd.git source
+        run: |
+          git init source
+          git -C source remote add origin https://github.com/Yuzhii0718/bl-mt798x-dhcpd.git
+          git -C source fetch --depth=1 origin 0f584098854f2956d5d36f3fbe6b786fafeb7e74
+          git -C source checkout --detach FETCH_HEAD
+
+      - name: Fix full UBI partition erase before firmware write
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("source/uboot-mtk-20250711/board/mediatek/common/mtd_helper.c")
+          text = path.read_text()
+
+          old = '''			if (!ret && ii.type == IMAGE_UBI2 &&
+			    !IS_ENABLED(CONFIG_MTK_DUAL_BOOT))
+				return mtd_update_generic(mtd, data, size, true);
+'''
+          new = '''			if (!ret && ii.type == IMAGE_UBI2 &&
+			    !IS_ENABLED(CONFIG_MTK_DUAL_BOOT)) {
+				/*
+				 * G33Pro uses a large fixed UBI partition.  A shorter
+				 * factory image must not leave old EC headers at the tail,
+				 * otherwise Linux rejects mixed image_seq values on attach.
+				 */
+				ubi_detach();
+				ret = mtd_erase_skip_bad(mtd, 0, mtd->size, mtd->size,
+							 NULL, NULL, NULL, false);
+				if (ret)
+					return ret;
+
+				return mtd_write_skip_bad(mtd, 0, size, mtd->size,
+							  NULL, data, true);
+			}
+'''
+          if old not in text:
+              raise SystemExit("ERROR: expected IMAGE_UBI2 write path not found")
+          path.write_text(text.replace(old, new, 1))
+          PY
+          grep -A18 'ii.type == IMAGE_UBI2' source/uboot-mtk-20250711/board/mediatek/common/mtd_helper.c | grep -q 'mtd->size'
+          grep -A18 'ii.type == IMAGE_UBI2' source/uboot-mtk-20250711/board/mediatek/common/mtd_helper.c | grep -q 'mtd_write_skip_bad'
 
       - name: Add G33Pro board definition
         run: |
@@ -61,4 +101,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "gielink-g33pro-sp2-dhcpd-${{ github.run_number }}" release/* --target "$GITHUB_SHA" --title "GIELINK G33Pro SP2 DHCPD U-Boot ${{ github.run_number }}" --notes 'MT7981 GIELINK G33Pro: 512MB DDR4, SPI-NAND/NMBM, fixed partitions bl2 1MiB + env 512KiB + factory 2MiB + fip 2MiB + ubi 114MiB. Mesh key GPIO0, reset GPIO1, RGB LEDs GPIO10/11/12. Q30Pro-style MT7531 switch selection; Linux WAN/LAN roles are defined by the system DTS. Includes DHCP failsafe and advanced WebUI.'
+          gh release create "gielink-g33pro-sp2-dhcpd-${{ github.run_number }}" release/* --target "$GITHUB_SHA" --title "GIELINK G33Pro SP2 DHCPD U-Boot ${{ github.run_number }}" --notes 'MT7981 GIELINK G33Pro: 512MB DDR4, SPI-NAND/NMBM, fixed partitions bl2 1MiB + env 512KiB + factory 2MiB + fip 2MiB + ubi 114MiB. Mesh key GPIO0, reset GPIO1, RGB LEDs GPIO10/11/12. Q30Pro-style MT7531 switch selection. Firmware Web/Failsafe writes erase the entire UBI partition before writing, preventing stale-tail mixed image_seq failures. Linux WAN/LAN roles are defined by the system DTS. Includes DHCP failsafe and advanced WebUI.'
