@@ -1,4 +1,4 @@
-name: CMCC A10 non-NMBM DHCPD U-Boot
+name: CMCC A10 stock non-NMBM DHCPD U-Boot
 
 on:
   workflow_dispatch:
@@ -75,16 +75,26 @@ jobs:
           grep -A17 'ii.type == IMAGE_UBI2' source/uboot-mtk-20250711/board/mediatek/common/mtd_helper.c | grep -q 'mtd_write_skip_bad'
           grep -q 'reg = <0x40000000 0x20000000>;' source/uboot-mtk-20250711/arch/arm/dts/mt7981-cmcc_a10.dts
 
-      - name: Build A10 non-NMBM DHCPD BL2 and FIP
+      - name: Build A10 fixed 64 MiB stock BL2 and FIP
         working-directory: source
         run: |
           chmod +x build.sh
+
+          cp uboot-mtk-20250711/configs-nonmbm/mt7981_cmcc_a10_defconfig \
+            uboot-mtk-20250711/configs-nonmbm/mt7981_cmcc_a10_stock_defconfig
+          sed -i \
+            's#CONFIG_MTDPARTS_DEFAULT=.*#CONFIG_MTDPARTS_DEFAULT="spi-nand0:1024k(BL2),512k(u-boot-env),2048k(Factory),2048k(FIP),65536k(ubi)"#' \
+            uboot-mtk-20250711/configs-nonmbm/mt7981_cmcc_a10_stock_defconfig
+          grep -q '65536k(ubi)' \
+            uboot-mtk-20250711/configs-nonmbm/mt7981_cmcc_a10_stock_defconfig
+
           SOC=mt7981 \
           BOARD=cmcc_a10 \
           VERSION=2025 \
           VARIANT=nonmbm \
+          UBOOT_CFG=mt7981_cmcc_a10_stock_defconfig \
           FIXED_MTDPARTS=1 \
-          MULTI_LAYOUT=1 \
+          MULTI_LAYOUT=0 \
           FSTHEME=bootstrap \
           UBIMNG=1 \
           COPY_BL2=1 \
@@ -101,7 +111,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: CMCC-A10-NONMBM-DHCPD-UBOOT-${{ github.run_number }}
+          name: CMCC-A10-STOCK-NONMBM-DHCPD-UBOOT-${{ github.run_number }}
           path: |
             release/
             build-a10.log
@@ -111,7 +121,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "cmcc-a10-nonmbm-dhcpd-${GITHUB_RUN_NUMBER}" release/* \
+          gh release create "cmcc-a10-stock-nonmbm-dhcpd-${GITHUB_RUN_NUMBER}" release/* \
             --target "$GITHUB_SHA" \
-            --title "CMCC A10 non-NMBM DHCPD U-Boot ${GITHUB_RUN_NUMBER}" \
-            --notes 'CMCC A10 MT7981: standard non-NMBM U-Boot using spi-nand0, 512 MB RAM, DHCP failsafe WebUI, fixed parts plus multi-layout, and full UBI partition erase before firmware writes. Flash the generated BL2 and FIP as a matched pair.'
+            --title "CMCC A10 stock non-NMBM DHCPD U-Boot ${GITHUB_RUN_NUMBER}" \
+            --notes 'CMCC A10 MT7981: fixed stock 64 MiB UBI layout, standard non-NMBM spi-nand0, 512 MB RAM, DHCP failsafe WebUI, and full UBI partition erase before firmware writes. Flash the generated BL2 and FIP as a matched pair.'
