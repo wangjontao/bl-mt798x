@@ -1,4 +1,4 @@
-name: CMCC A10 DHCPD U-Boot
+name: CMCC A10 non-NMBM DHCPD U-Boot
 
 on:
   workflow_dispatch:
@@ -31,44 +31,13 @@ jobs:
           git -C source fetch --depth=1 origin 0f584098854f2956d5d36f3fbe6b786fafeb7e74
           git -C source checkout --detach FETCH_HEAD
 
-      - name: Patch A10 NMBM and UBI writes
+      - name: Patch A10 memory and UBI writes
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
           helper = Path("source/uboot-mtk-20250711/board/mediatek/common/mtd_helper.c")
           text = helper.read_text()
-
-          old_nmbm = (
-              "bool mtd_nmbm_enabled(void)\n"
-              "{\n"
-              "\tbool use_nmbm = IS_ENABLED(CONFIG_ENABLE_NAND_NMBM);\n"
-              "\tconst char *val = env_get(\"nmbm_enable\");\n"
-              "\n"
-              "\tif (!val || !val[0])\n"
-              "\t\treturn use_nmbm;\n"
-              "\n"
-              "\tif (!strcmp(val, \"1\") || !strcasecmp(val, \"true\") ||\n"
-              "\t    !strcasecmp(val, \"yes\") || !strcasecmp(val, \"on\"))\n"
-              "\t\treturn true;\n"
-              "\n"
-              "\tif (!strcmp(val, \"0\") || !strcasecmp(val, \"false\") ||\n"
-              "\t    !strcasecmp(val, \"no\") || !strcasecmp(val, \"off\"))\n"
-              "\t\treturn false;\n"
-              "\n"
-              "\treturn use_nmbm;\n"
-              "}\n"
-          )
-          new_nmbm = (
-              "bool mtd_nmbm_enabled(void)\n"
-              "{\n"
-              "\t/* CMCC A10 uses NMBM; ignore stale nmbm_enable values. */\n"
-              "\treturn IS_ENABLED(CONFIG_ENABLE_NAND_NMBM);\n"
-              "}\n"
-          )
-          if old_nmbm not in text:
-              raise SystemExit("ERROR: expected mtd_nmbm_enabled block not found")
-          text = text.replace(old_nmbm, new_nmbm, 1)
 
           old_write = (
               "\t\t\tif (!ret && ii.type == IMAGE_UBI2 &&\n"
@@ -102,19 +71,18 @@ jobs:
           dts.write_text(dts_text.replace(old_mem, new_mem, 1))
           PY
 
-          grep -A5 'bool mtd_nmbm_enabled' source/uboot-mtk-20250711/board/mediatek/common/mtd_helper.c | grep -q 'return IS_ENABLED(CONFIG_ENABLE_NAND_NMBM);'
           grep -A17 'ii.type == IMAGE_UBI2' source/uboot-mtk-20250711/board/mediatek/common/mtd_helper.c | grep -q 'mtd_erase_skip_bad'
           grep -A17 'ii.type == IMAGE_UBI2' source/uboot-mtk-20250711/board/mediatek/common/mtd_helper.c | grep -q 'mtd_write_skip_bad'
           grep -q 'reg = <0x40000000 0x20000000>;' source/uboot-mtk-20250711/arch/arm/dts/mt7981-cmcc_a10.dts
 
-      - name: Build A10 DHCPD BL2 and FIP
+      - name: Build A10 non-NMBM DHCPD BL2 and FIP
         working-directory: source
         run: |
           chmod +x build.sh
           SOC=mt7981 \
           BOARD=cmcc_a10 \
           VERSION=2025 \
-          VARIANT=default \
+          VARIANT=nonmbm \
           FIXED_MTDPARTS=1 \
           MULTI_LAYOUT=1 \
           FSTHEME=bootstrap \
@@ -133,7 +101,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: CMCC-A10-DHCPD-UBOOT-${{ github.run_number }}
+          name: CMCC-A10-NONMBM-DHCPD-UBOOT-${{ github.run_number }}
           path: |
             release/
             build-a10.log
@@ -143,7 +111,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "cmcc-a10-dhcpd-${GITHUB_RUN_NUMBER}" release/* \
+          gh release create "cmcc-a10-nonmbm-dhcpd-${GITHUB_RUN_NUMBER}" release/* \
             --target "$GITHUB_SHA" \
-            --title "CMCC A10 DHCPD U-Boot ${GITHUB_RUN_NUMBER}" \
-            --notes 'CMCC A10 MT7981: NMBM forced on, 512 MB RAM, DHCP failsafe WebUI, fixed parts plus multi-layout, and full UBI partition erase before firmware writes. Flash the generated BL2 and FIP as a matched pair.'
+            --title "CMCC A10 non-NMBM DHCPD U-Boot ${GITHUB_RUN_NUMBER}" \
+            --notes 'CMCC A10 MT7981: standard non-NMBM U-Boot using spi-nand0, 512 MB RAM, DHCP failsafe WebUI, fixed parts plus multi-layout, and full UBI partition erase before firmware writes. Flash the generated BL2 and FIP as a matched pair.'
